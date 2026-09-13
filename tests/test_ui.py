@@ -60,7 +60,15 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
         page.goto(url);page.wait_for_function("document.querySelectorAll('.session').length===3")
         assert page.locator('#last-side').inner_text()=='Right'
         starts=page.locator('.session h3').all_inner_texts()
-        assert starts==sorted(starts),starts
+        assert starts==sorted(starts,reverse=True),starts
+        assert page.locator('.session').first.evaluate('(e)=>e.classList.contains("latest")')
+        for width,height in [(390,664),(360,640)]:
+            page.set_viewport_size({'width':width,'height':height})
+            bounds=page.locator('.session').evaluate_all('(els)=>els.map(e=>({top:e.getBoundingClientRect().top,bottom:e.getBoundingClientRect().bottom}))')
+            assert all(b['top']>=0 and b['bottom']<=height for b in bounds),(width,height,bounds)
+            assert page.locator('.segments li:visible').count()==6
+            assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+            print('PASS above fold',width,height,bounds)
         assert page.locator('svg[role=img]').count()==4
         assert page.locator('#daily-table tr').count()==10
         assert 'Never display this' not in page.locator('body').inner_text()
@@ -68,7 +76,7 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
         assert 'inferred, not certain' in page.locator('#session-method').text_content()
         assert page.locator('.side-left').count()==3
         assert page.locator('#recent .side-right').count()==3
-        expected_end=(datetime.fromisoformat(payload['recent'][1]['startedAt'])+timedelta(minutes=12)).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Zurich')).strftime('%H:%M')
+        expected_end=(datetime.fromisoformat(payload['recent'][0]['startedAt'])+timedelta(minutes=12)).astimezone(__import__('zoneinfo').ZoneInfo('Europe/Zurich')).strftime('%H:%M')
         assert page.locator('.segment-clock').first.inner_text().endswith('– '+expected_end)
         assert page.locator('.segment-minutes').first.inner_text()=='12 min'
         assert page.locator('.intro, .notice, .method-note').count()==0
@@ -92,33 +100,33 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
             print('PASS axe WCAG 2.1 A/AA populated desktop')
         payload['recent'][0]['order']=None
         reload();assert page.locator('#last-side').inner_text()=='Order unknown'
-        assert 'list order is not a sequence' in page.locator('.session .segments').last.get_attribute('aria-label')
+        assert 'list order is not a sequence' in page.locator('.session .segments').first.get_attribute('aria-label')
         print('PASS unknown order never infers a last side')
         payload['recent'][0]['leftMinutes']=None
         payload['recent'][0]['knownMinutes']=10
-        reload();assert page.locator('.session-total').last.get_attribute('aria-label')=='10 minutes known; total incomplete'
+        reload();assert page.locator('.session-total').first.get_attribute('aria-label')=='10 minutes known; total incomplete'
         payload['checkedAt']=iso(now-timedelta(minutes=11))
         reload();assert page.locator('#status').inner_text().startswith('Published snapshot')
         payload['checkedAt']=iso(now+timedelta(hours=1))
         reload();assert 'future' in page.locator('#status').inner_text()
         print('PASS partial durations, neutral snapshot age, future timestamp')
         payload=fixture();payload['recent'][0].update(leftMinutes=None,rightMinutes=0,knownMinutes=12,endedAt=None,order=['left','left'],segments=[dict(side='left',at=payload['recent'][0]['startedAt'],minutes=12),dict(side='left',at=payload['recent'][0]['startedAt'],minutes=None)])
-        reload();assert page.locator('.session-total').last.get_attribute('aria-label')=='12 minutes known; total incomplete'
-        assert page.locator('.segment-clock').last.inner_text().endswith('– —')
-        assert page.locator('.segment-minutes').last.get_attribute('aria-label')=='Duration unknown'
-        assert 'Partial' in page.locator('.session').last.inner_text()
+        reload();assert page.locator('.session-total').first.get_attribute('aria-label')=='12 minutes known; total incomplete'
+        assert page.locator('.session').first.locator('.segment-clock').last.inner_text().endswith('– —')
+        assert page.locator('.session').first.locator('.segment-minutes').last.get_attribute('aria-label')=='Duration unknown'
+        assert 'Partial' in page.locator('.session').first.inner_text()
         print('PASS same-side partial retains known subtotal')
         payload=fixture();payload['recent'][0].update(order=None,segments=[],leftMinutes=12,rightMinutes=0,knownMinutes=12,endedAt=None)
-        reload();assert page.locator('.session').last.locator('.segments li').count()==1
-        assert page.locator('.segment-clock').last.inner_text()=='— – —'
-        assert page.locator('.segment-minutes').last.inner_text()=='12 min'
+        reload();assert page.locator('.session').first.locator('.segments li').count()==1
+        assert page.locator('.session').first.locator('.segment-clock').last.inner_text()=='— – —'
+        assert page.locator('.session').first.locator('.segment-minutes').last.inner_text()=='12 min'
         payload['recent'][0].update(leftMinutes=17,rightMinutes=10,knownMinutes=27,segments=record(15,['left','right'])['segments'])
-        reload();assert page.locator('.session').last.locator('.segments li').count()==3
-        assert page.locator('.segment-clock').last.inner_text()=='— – —'
-        assert page.locator('.segment-minutes').last.inner_text()=='5 min'
+        reload();assert page.locator('.session').first.locator('.segments li').count()==3
+        assert page.locator('.session').first.locator('.segment-clock').last.inner_text()=='— – —'
+        assert page.locator('.session').first.locator('.segment-minutes').last.inner_text()=='5 min'
         payload=fixture();payload['recent'][0].update(startedAt='2026-01-01T23:55:00+01:00',endedAt='2026-01-02T00:10:00+01:00',leftMinutes=15,rightMinutes=0,knownMinutes=15,order=['left'],segments=[dict(side='left',at='2026-01-01T23:55:00+01:00',minutes=15)])
-        reload();assert page.locator('.segment-clock').first.inner_text()=='23:55 – 00:10'
-        assert '2 Jan 2026' in page.locator('.segment-clock').first.get_attribute('aria-label')
+        reload();assert page.locator('.session').last.locator('.segment-clock').first.inner_text()=='23:55 – 00:10'
+        assert '2 Jan 2026' in page.locator('.session').last.locator('.segment-clock').first.get_attribute('aria-label')
         page.locator('#session-method summary').click()
         assert page.locator('#session-method').evaluate('(e)=>e.open')
         if args.axe:

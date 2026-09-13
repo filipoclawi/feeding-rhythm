@@ -31,14 +31,14 @@
   }
   function freshness() {
     const future = current && Date.parse(current.checkedAt) > Date.now() + 60000;
-    $('status').textContent = !current ? (failed ? 'Records unavailable · retrying automatically' : 'Loading records…') : failed ? 'Refresh failed · showing last loaded snapshot' : future ? 'Snapshot time is in the future' : 'Published snapshot · updates can take a few minutes';
+    $('status').textContent = !current ? (failed ? 'Records unavailable · retrying automatically' : 'Loading records…') : failed ? 'Refresh failed · showing last loaded snapshot' : future ? 'Snapshot time is in the future' : 'Published snapshot';
     $('status-dot').className = `status-dot ${!current || failed || future ? 'stale' : 'fresh'}`;
-    $('checked').textContent = `Snapshot generated: ${current ? stamp(current.checkedAt) : '—'}`;
-    $('asof').textContent = `Latest data: ${current ? stamp(current.dataAsOf) : '—'}`;
+    $('checked').textContent = `Checked: ${current ? stamp(current.checkedAt) : '—'}`;
+    $('asof').textContent = `Observed: ${current ? stamp(current.dataAsOf) : '—'}`;
   }
   function recentSessions(d) {
-    const sessions = [...d.recent].sort((a,b) => Date.parse(a.startedAt) - Date.parse(b.startedAt));
-    const latest = sessions.at(-1);
+    const sessions = [...d.recent].sort((a,b) => Date.parse(b.startedAt) - Date.parse(a.startedAt));
+    const latest = sessions[0];
     const last = latest?.order?.at(-1);
     $('last-side').textContent = latest ? (last ? side(last) : 'Order unknown') : 'No recorded side';
     $('last-side').className = last ? `side-tag side-${last}` : 'side-tag';
@@ -46,10 +46,10 @@
     $('recent').replaceChildren();
     if (!sessions.length) $('recent').append(element('p','empty','No recent sessions recorded. This does not mean no feeds occurred.'));
     sessions.forEach((s,index) => {
-      const card = element('article', `session${index === sessions.length-1 ? ' latest' : ''}`);
+      const card = element('article', `session${index === 0 ? ' latest' : ''}`);
       const top = element('div','session-top');
       top.append(element('span','session-date',date(s.startedAt)));
-      if (index === sessions.length-1) top.append(element('span','tag','Latest'));
+      if (index === 0) top.append(element('span','tag','Latest'));
       const complete = s.leftMinutes !== null && s.rightMinutes !== null;
       const heading = element('div','session-heading');
       heading.append(element('h3','',time(s.startedAt)));
