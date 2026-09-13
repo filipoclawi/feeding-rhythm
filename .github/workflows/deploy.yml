@@ -1,0 +1,94 @@
+name: Publish dashboard
+run-name: Publish ${{ inputs.publishId }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      ciphertext:
+        description: Base64 of AES-GCM nonce followed by ciphertext and tag
+        required: true
+        type: string
+      publishId:
+        description: Unique publication identifier (AES-GCM authenticated data)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages-publication
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.12'
+      - name: Install authenticated encryption
+        run: python -m pip install --disable-pip-version-check 'cryptography==50.0.1'
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - name: Stage UI and decrypt sanitized export
+        env:
+          EXPORT_CIPHERTEXT: ${{ inputs.ciphertext }}
+          EXPORT_PUBLISH_ID: ${{ inputs.publishId }}
+          EXPORT_KEY: ${{ secrets.FEEDING_EXPORT_KEY }}
+        run: |
+          python - <<'PY'
+          import base64, json, os, pathlib, re, shutil, subprocess, sys
+          from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+          try:
+              publish_id = os.environ['EXPORT_PUBLISH_ID']
+              if not re.fullmatch(r'[a-f0-9]{32}', publish_id):
+                  raise ValueError('Invalid publication ID')
+              tracked = subprocess.check_output(['git', 'ls-files', '-z']).decode().split('\0')
+              if any(pathlib.PurePosixPath(p).name == 'data.json' for p in tracked if p):
+                  raise ValueError('Data must never be tracked')
+              key = base64.b64decode(os.environ['EXPORT_KEY'], validate=True)
+              raw = base64.b64decode(os.environ['EXPORT_CIPHERTEXT'], validate=True)
+              if len(key) != 32 or len(raw) < 29:
+                  raise ValueError('Invalid encrypted input')
+              plain = AESGCM(key).decrypt(raw[:12], raw[12:], publish_id.encode())
+              payload = json.loads(plain)
+              if not isinstance(payload, dict) or len(plain) > 1024 * 1024:
+                  raise ValueError('Invalid public export')
+              site = pathlib.Path(os.environ['RUNNER_TEMP']) / 'public-site'
+              site.mkdir(mode=0o700)
+              # Explicit allowlist: no private scripts, repository metadata, tests,
+              # fixture payloads, or existing data files enter the Pages artifact.
+              for name in ('index.html', 'styles.css', 'app.js'):
+                  source = pathlib.Path(name)
+                  if not source.is_file() or source.is_symlink():
+                      raise ValueError('Missing UI asset')
+                  shutil.copyfile(source, site / name)
+              (site / 'data.json').write_bytes(plain)
+              (site / '.nojekyll').touch()
+          except Exception:
+              print('Public artifact preparation failed; no payload logged.', file=sys.stderr)
+              sys.exit(1)
+          PY
+      - name: Upload ephemeral Pages artifact
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: ${{ runner.temp }}/public-site
+          retention-days: 1
+          include-hidden-files: true
+      - name: Deploy Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1
+      - name: Remove decrypted staging files
+        if: always()
+        run: rm -rf -- "${RUNNER_TEMP}/public-site" "${RUNNER_TEMP}/artifact.tar"

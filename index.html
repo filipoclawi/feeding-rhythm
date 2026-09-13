@@ -1,0 +1,22 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow"><meta name="color-scheme" content="light">
+<meta name="description" content="A quiet view of recorded breastfeeding sessions and daily patterns.">
+<title>Feeding rhythm · Recorded sessions</title>
+<link rel="stylesheet" href="styles.css?v=1"><script src="app.js?v=1" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to dashboard</a>
+<header class="masthead"><a class="brand" href="./" aria-label="Feeding rhythm home"><span class="brand-mark" aria-hidden="true">◒</span> feeding rhythm</a><span class="eyebrow">A little perspective</span></header>
+<main id="main">
+<section class="intro"><div><p class="eyebrow">Breastfeeding journal</p><h1>Small moments.<br><em>A rhythm of your own.</em></h1><p class="lede">The latest recorded feeds, with a little room to see the bigger picture.</p></div><div class="orbit" aria-hidden="true"><span></span><i></i></div></section>
+<aside class="notice"><span aria-hidden="true">↗</span><p><strong>A record, not the whole story.</strong> Not all feeds may be recorded. These are observations, not a feeding schedule or medical advice.</p></aside>
+<section class="freshness" aria-label="Data freshness"><div><span class="status-dot" id="status-dot"></span><strong id="status" role="status">Loading records…</strong><p id="checked">Snapshot generated: —</p><p id="asof">Latest data: —</p></div><button id="refresh" type="button">Refresh <span aria-hidden="true">↻</span></button></section>
+<section aria-labelledby="recent-title"><div class="section-heading"><div><p class="eyebrow">01 / The recent picture</p><h2 id="recent-title">Last recorded sessions</h2></div><p>Oldest to newest · Zurich time</p></div><div class="last-side"><div><p class="eyebrow">Last recorded side</p><strong id="last-side">—</strong></div><p id="side-context">Waiting for the latest record. This never suggests which side to use next.</p></div><div id="recent" class="sessions"><p class="empty">Loading the latest sessions…</p></div><p class="method-note">Grouping feeds whose starts fall within 60 minutes of the first start is <strong>inferred, not certain</strong>. Side order is shown only when recorded; unknown order is never guessed.</p></section>
+<section class="history" aria-labelledby="history-title"><div class="section-heading"><div><p class="eyebrow">02 / A wider view</p><h2 id="history-title">Patterns, day by day</h2></div><p id="coverage">Daily aggregates only</p></div><p class="section-copy">Recorded sessions, not a measure of intake. Missing durations and unrecorded feeds can change these patterns.</p><div class="chart-grid" id="charts"></div><details class="data-details"><summary>View daily numbers &amp; definitions</summary><p>Totals sum known feeding minutes, including partial sessions; averages use fully timed sessions only. The interval is the average start-to-start gap assigned to each day by the source, not time spent feeding. Missing values are shown as —, never as zero. Historical individual events are not displayed. Historical durations are rounded to 5 minutes and intervals to half-hours.</p><div class="table-scroll"><table><caption>Daily recorded feeding aggregates · Europe/Zurich</caption><thead><tr><th scope="col">Date</th><th scope="col">Sessions</th><th scope="col">Known duration</th><th scope="col">Total min</th><th scope="col">Mean min</th><th scope="col">Mean gap h</th></tr></thead><tbody id="daily-table"></tbody></table></div></details></section>
+<footer><span class="brand">◒ feeding rhythm</span><p>Made for noticing, not comparing.<br>All times Europe/Zurich · Checks every 60 seconds.</p><p class="privacy">No analytics or remote assets. Noindex discourages indexing; it is not access control.</p></footer>
+</main>
+<noscript><p class="notice">JavaScript is needed to load the published records. No records are embedded in this page.</p></noscript>
+</body></html>
