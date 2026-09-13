@@ -41,28 +41,51 @@
     const latest = sessions.at(-1);
     const last = latest?.order?.at(-1);
     $('last-side').textContent = latest ? (last ? side(last) : 'Order unknown') : 'No recorded side';
-    $('side-context').textContent = latest ? `${last ? 'From the latest recorded session' : 'The latest session has no recorded side order'} · ${stamp(latest.startedAt)}. Not a suggestion for the next feed.` : 'No recent sessions are available. This never suggests which side to use next.';
+    $('last-side').className = last ? `side-tag side-${last}` : 'side-tag';
+    $('side-context').textContent = latest ? `${stamp(latest.startedAt)}. Recorded side only, not a suggestion for the next feed.` : 'No recent sessions recorded.';
     $('recent').replaceChildren();
     if (!sessions.length) $('recent').append(element('p','empty','No recent sessions recorded. This does not mean no feeds occurred.'));
     sessions.forEach((s,index) => {
       const card = element('article', `session${index === sessions.length-1 ? ' latest' : ''}`);
       const top = element('div','session-top');
-      top.append(element('span','',`Recorded session ${index+1}`), element('span','tag',index === sessions.length-1 ? 'LATEST' : ''));
-      card.append(top,element('h3','',`${time(s.startedAt)}${s.endedAt ? ` – ${time(s.endedAt)}` : ''}`),element('p','session-date',`${date(s.startedAt)}${s.endedAt && date(s.endedAt) !== date(s.startedAt) ? ` → ${date(s.endedAt)}` : ''}${s.endedAt === null ? ' · End not recorded' : ''}`));
+      top.append(element('span','session-date',date(s.startedAt)));
+      if (index === sessions.length-1) top.append(element('span','tag','Latest'));
+      const complete = s.leftMinutes !== null && s.rightMinutes !== null;
+      const heading = element('div','session-heading');
+      heading.append(element('h3','',time(s.startedAt)));
+      const total = element('span','session-total',s.knownMinutes === null ? '— min' : `${num(s.knownMinutes)} min${complete ? '' : '+'}`);
+      total.setAttribute('aria-label',s.knownMinutes === null ? 'Total duration unknown' : `${num(s.knownMinutes)} minutes${complete ? ' total' : ' known; total incomplete'}`);
+      heading.append(total);
+      card.append(top,heading);
       const list = element('ol','segments');
-      list.setAttribute('aria-label',s.order ? 'Recorded feeding segments' : 'Feeding segments; side order unknown');
+      list.setAttribute('aria-label',s.order ? 'Recorded feeding segments in chronological order' : 'Feeding segments; side order unknown; list order is not a sequence');
       let segments = [...s.segments];
       if (s.order && segments.every(seg => seg.at)) segments.sort((a,b) => Date.parse(a.at)-Date.parse(b.at));
-      if (!segments.length) segments = [{side:'left',at:null,minutes:s.leftMinutes},{side:'right',at:null,minutes:s.rightMinutes}];
-      segments.forEach(seg => { const li=element('li'); li.append(element('span','side',side(seg.side)),element('span','segment-detail',`${time(seg.at)} · ${seg.minutes === null ? 'Duration unknown' : `${num(seg.minutes)} min`}`)); list.append(li); });
+      // Mixed timed/retrospective groups can have reported side minutes not
+      // represented by timed segments. Keep those as untimed rows, never clocks.
+      for (const [name,total] of (s.order === null ? [['left',s.leftMinutes],['right',s.rightMinutes]] : [])) {
+        const parts = segments.filter(seg => seg.side === name);
+        const known = parts.reduce((sum,seg) => sum + (seg.minutes ?? 0),0);
+        if (total !== null && total - known > 1e-7) segments.push({side:name,at:null,minutes:total-known});
+        else if (total === null && !parts.some(seg => seg.minutes === null)) segments.push({side:name,at:null,minutes:null});
+      }
+      segments.forEach(seg => {
+        const li=element('li');
+        const end = seg.at && seg.minutes !== null ? new Date(Date.parse(seg.at)+seg.minutes*60000).toISOString() : null;
+        const clock = element('span','segment-clock',`${seg.at ? time(seg.at) : '—'} – ${end ? time(end) : '—'}`);
+        clock.setAttribute('aria-label',`${side(seg.side)}: ${seg.at ? stamp(seg.at) : 'Start time unknown'} to ${end ? stamp(end) : 'End time unknown'}`);
+        const minutes = element('span','segment-minutes',`${num(seg.minutes)} min`);
+        if (seg.minutes === null) minutes.setAttribute('aria-label','Duration unknown');
+        li.append(element('span',`side-tag side-${seg.side}`,side(seg.side)),clock,minutes);
+        list.append(li);
+      });
       card.append(list);
-      if (s.order) card.append(element('p','session-total',`Recorded order: ${s.order.map(side).join(' → ')}`));
-      else card.append(element('p','uncertain','Side order unknown · list order is not a sequence'));
-      const complete = s.leftMinutes !== null && s.rightMinutes !== null;
-      const known = s.knownMinutes;
-      card.append(element('p','session-total',complete ? `${num(known)} min total · L ${num(s.leftMinutes)} / R ${num(s.rightMinutes)}` : known === null ? 'Total duration unknown' : `${num(known)} min known · total incomplete`));
-      if (s.grouped) card.append(element('p','uncertain','Inferred grouping · starts within 60 min of session start'));
-      if (s.uncertain) card.append(element('p','uncertain','Incomplete or uncertain record'));
+      const flags = [];
+      if (s.order === null) flags.push('Order unknown');
+      if (!complete) flags.push('Partial');
+      else if (s.uncertain) flags.push('Uncertain');
+      if (s.grouped) flags.push('Grouped');
+      if (flags.length) card.append(element('p','record-flags',flags.join(' · ')));
       $('recent').append(card);
     });
   }
