@@ -18,7 +18,7 @@
   function validate(d) {
     if (!keys(d,['version','checkedAt','dataAsOf','timezone','recent','days','coverage']) || d.version !== 1 || d.timezone !== TZ || !iso(d.checkedAt) || !(d.dataAsOf === null || iso(d.dataAsOf)) || !Array.isArray(d.recent) || d.recent.length > 3 || !Array.isArray(d.days)) throw Error('Invalid public data');
     for (const s of d.recent) {
-      if (!keys(s,['startedAt','endedAt','leftMinutes','rightMinutes','order','segments','grouped','uncertain']) || !iso(s.startedAt) || !(s.endedAt === null || (iso(s.endedAt) && Date.parse(s.endedAt) >= Date.parse(s.startedAt))) || !amount(s.leftMinutes) || !amount(s.rightMinutes) || typeof s.grouped !== 'boolean' || typeof s.uncertain !== 'boolean' || !(s.order === null || (Array.isArray(s.order) && s.order.length > 0 && s.order.every(v => ['left','right'].includes(v)))) || !Array.isArray(s.segments)) throw Error('Invalid session');
+      if (!keys(s,['startedAt','endedAt','leftMinutes','rightMinutes','knownMinutes','order','segments','grouped','uncertain']) || !iso(s.startedAt) || !(s.endedAt === null || (iso(s.endedAt) && Date.parse(s.endedAt) >= Date.parse(s.startedAt))) || !amount(s.leftMinutes) || !amount(s.rightMinutes) || !amount(s.knownMinutes) || typeof s.grouped !== 'boolean' || typeof s.uncertain !== 'boolean' || !(s.order === null || (Array.isArray(s.order) && s.order.length > 0 && s.order.every(v => ['left','right'].includes(v)))) || !Array.isArray(s.segments)) throw Error('Invalid session');
       for (const segment of s.segments) if (!keys(segment,['side','at','minutes']) || !['left','right','unknown'].includes(segment.side) || !(segment.at === null || iso(segment.at)) || !amount(segment.minutes)) throw Error('Invalid segment');
     }
     const dates = new Set();
@@ -59,8 +59,8 @@
       if (s.order) card.append(element('p','session-total',`Recorded order: ${s.order.map(side).join(' → ')}`));
       else card.append(element('p','uncertain','Side order unknown · list order is not a sequence'));
       const complete = s.leftMinutes !== null && s.rightMinutes !== null;
-      const known = (s.leftMinutes ?? 0) + (s.rightMinutes ?? 0);
-      card.append(element('p','session-total',complete ? `${num(known)} min total · L ${num(s.leftMinutes)} / R ${num(s.rightMinutes)}` : s.leftMinutes === null && s.rightMinutes === null || (!complete && known === 0) ? 'Total duration unknown' : `${num(known)} min known · total incomplete`));
+      const known = s.knownMinutes;
+      card.append(element('p','session-total',complete ? `${num(known)} min total · L ${num(s.leftMinutes)} / R ${num(s.rightMinutes)}` : known === null ? 'Total duration unknown' : `${num(known)} min known · total incomplete`));
       if (s.grouped) card.append(element('p','uncertain','Inferred grouping · starts within 60 min of session start'));
       if (s.uncertain) card.append(element('p','uncertain','Incomplete or uncertain record'));
       $('recent').append(card);

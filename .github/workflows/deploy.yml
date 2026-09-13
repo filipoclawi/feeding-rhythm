@@ -62,9 +62,9 @@ jobs:
               if len(key) != 32 or len(raw) < 29:
                   raise ValueError('Invalid encrypted input')
               plain = AESGCM(key).decrypt(raw[:12], raw[12:], publish_id.encode())
-              payload = json.loads(plain)
-              if not isinstance(payload, dict) or len(plain) > 1024 * 1024:
-                  raise ValueError('Invalid public export')
+              # Independent privacy boundary, before creating any artifact files.
+              from validate_public import loads_public
+              payload = loads_public(plain)
               site = pathlib.Path(os.environ['RUNNER_TEMP']) / 'public-site'
               site.mkdir(mode=0o700)
               # Explicit allowlist: no private scripts, repository metadata, tests,

@@ -25,7 +25,7 @@ iso = lambda d: d.isoformat(timespec='seconds')
 def record(hour, order, grouped=False):
     start = now.replace(hour=hour, minute=0, second=0, microsecond=0) - timedelta(days=1)
     return dict(startedAt=iso(start), endedAt=iso(start+timedelta(minutes=25)),
-                leftMinutes=12, rightMinutes=10, order=order,
+                leftMinutes=12, rightMinutes=10, knownMinutes=22, order=order,
                 segments=[dict(side='left', at=iso(start), minutes=12), dict(side='right', at=iso(start+timedelta(minutes=15)), minutes=10)],
                 grouped=grouped, uncertain=grouped)
 
@@ -88,12 +88,16 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
         assert 'list order is not a sequence' in page.locator('.session').last.inner_text()
         print('PASS unknown order never infers a last side')
         payload['recent'][0]['leftMinutes']=None
+        payload['recent'][0]['knownMinutes']=10
         reload();assert '10 min known · total incomplete' in page.locator('.session').last.inner_text()
         payload['checkedAt']=iso(now-timedelta(minutes=11))
         reload();assert page.locator('#status').inner_text().startswith('Published snapshot')
         payload['checkedAt']=iso(now+timedelta(hours=1))
         reload();assert 'future' in page.locator('#status').inner_text()
         print('PASS partial durations, neutral snapshot age, future timestamp')
+        payload=fixture();payload['recent'][0].update(leftMinutes=None,rightMinutes=0,knownMinutes=12,endedAt=None,order=['left','left'],segments=[dict(side='left',at=payload['recent'][0]['startedAt'],minutes=12),dict(side='left',at=payload['recent'][0]['startedAt'],minutes=None)])
+        reload();assert '12 min known · total incomplete' in page.locator('.session').last.inner_text()
+        print('PASS same-side partial retains known subtotal')
         payload=fixture();reload()
         outage=True
         page.locator('#refresh').click();page.wait_for_function("document.querySelector('#status').textContent.startsWith('Refresh failed')")
