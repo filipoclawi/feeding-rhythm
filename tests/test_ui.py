@@ -70,6 +70,22 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             print('PASS above fold',width,height,bounds)
         assert page.locator('svg[role=img]').count()==4
+        for width in [360, 1440]:
+            page.set_viewport_size({'width':width,'height':1000})
+            axes=page.locator('svg').evaluate_all('''ss=>ss.map(s=>{
+                const ticks=[...s.querySelectorAll('text[text-anchor="end"]')];
+                const box=s.getBoundingClientRect();
+                return {labels:ticks.map(t=>t.textContent),lines:s.querySelectorAll('line').length,
+                    unclipped:ticks.every(t=>{const r=t.getBoundingClientRect();return r.left>=box.left&&r.right<=box.right}),
+                    spaced:ticks.every((t,i)=>!i||t.getBoundingClientRect().bottom<ticks[i-1].getBoundingClientRect().top)};
+            })''')
+            assert axes[0]['labels']==['0','3','6'], axes[0]
+            assert [a['labels'] for a in axes[1:]]==[
+                ['0 min','20 min','40 min','60 min','80 min','100 min'],
+                ['0 min','10 min','20 min','30 min'],
+                ['0 h','1 h','2 h','3 h']]
+            assert all(a['unclipped'] and a['spaced'] and a['lines']==len(a['labels']) for a in axes[1:]), axes
+        print('PASS duration axes: rounded units, aligned gridlines, no clipped or overlapping labels at 360/1440')
         assert page.locator('#daily-table tr').count()==10
         assert 'Never display this' not in page.locator('body').inner_text()
         assert not page.locator('#session-method').evaluate('(e)=>e.open')

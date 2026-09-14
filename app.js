@@ -96,6 +96,18 @@
     ['meanIntervalHours','Average start-to-start interval','Hours · missing feeds may lengthen gaps','h','#a7513c']
   ];
   const svgNode = (tag,attrs,text) => {const node=document.createElementNS('http://www.w3.org/2000/svg',tag); Object.entries(attrs).forEach(([k,v])=>node.setAttribute(k,v)); if(text!==undefined) node.textContent=text; return node;};
+  // Zero-based duration scales: 3–5 equal intervals, with meaningful units.
+  function niceAxis(values, unit) {
+    const peak = Math.max(0, ...values.filter(v => Number.isFinite(v) && v >= 0));
+    const steps = unit === 'h' ? [.5, 1, 2, 3, 6, 12, 24] : [5, 10, 15, 20, 30, 60];
+    let step = steps.find(value => value >= peak / 5);
+    if (step === undefined) {
+      const magnitude = 10 ** Math.floor(Math.log10(peak / 5));
+      step = [1, 2, 2.5, 5, 10].map(value => value * magnitude).find(value => value >= peak / 5);
+    }
+    const intervals = Math.max(3, Math.ceil(peak / step));
+    return {step, max: intervals * step, ticks: Array.from({length: intervals + 1}, (_, i) => i * step)};
+  }
   function charts(d) {
     const days=[...d.days].sort((a,b)=>a.date.localeCompare(b.date));
     $('coverage').textContent = d.coverage.start && d.coverage.end ? `${date(d.coverage.start+'T12:00:00Z')} – ${date(d.coverage.end+'T12:00:00Z')}` : 'Coverage not available';
@@ -104,11 +116,15 @@
       const card=element('article','chart-card'); card.append(element('h3','',title),element('p','',description));
       if (!days.length || days.every(day=>day[key]===null)) card.append(element('p','empty','No recorded values available.'));
       else {
-        const values=days.map(day=>day[key]); const max=Math.max(1,...values.filter(v=>v!==null));
-        const width=440,height=180,left=38,right=12,top=15,bottom=38,plotW=width-left-right,plotH=height-top-bottom;
+        const values=days.map(day=>day[key]);
+        const scale=key === 'sessions' ? null : niceAxis(values,unit);
+        const max=scale ? scale.max : Math.max(1,...values.filter(v=>v!==null));
+        const ticks=scale ? scale.ticks : [0,max*.5,max];
+        const labels=ticks.map(value=>scale ? `${num(value)} ${unit}` : num(value));
+        const width=440,height=180,left=scale ? Math.max(76,...labels.map(label=>label.length*10+14)) : 38,right=12,top=15,bottom=38,plotW=width-left-right,plotH=height-top-bottom;
         const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-labelledby':`chart-${key}-title chart-${key}-desc`});
         svg.append(svgNode('title',{id:`chart-${key}-title`},`${title} by day`),svgNode('desc',{id:`chart-${key}-desc`},`Daily aggregates in ${unit}. Vertical axis starts at zero. Missing values are marked with a dash. Exact values are in the daily numbers table below.`));
-        [0,.5,1].forEach(f=>{const y=top+plotH*(1-f);svg.append(svgNode('line',{x1:left,y1:y,x2:width-right,y2:y,stroke:'#d8ddd2','stroke-width':1}),svgNode('text',{x:left-7,y:y+4,'text-anchor':'end'},num(max*f)));});
+        ticks.forEach((value,i)=>{const y=top+plotH*(1-value/max);svg.append(svgNode('line',{x1:left,y1:y,x2:width-right,y2:y,stroke:'#d8ddd2','stroke-width':1}),svgNode('text',{x:left-7,y:y+4,'text-anchor':'end'},labels[i]));});
         // Daily spacing preserves gaps in the calendar without inventing zeroes.
         const first=Date.parse(days[0].date), lastDate=Date.parse(days.at(-1).date), span=Math.max(1,Math.round((lastDate-first)/86400000)+1), step=plotW/span;
         const labelIndexes = new Set([0,Math.floor((days.length-1)/2),days.length-1]);
