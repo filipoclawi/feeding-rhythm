@@ -46,7 +46,7 @@ def invalid_payloads():
             target[key] = 'PRIVATE_SENTINEL'
             cases.append(value)
     value = fixture()
-    value['recent'] *= 4
+    value['recent'] *= 6
     cases.append(value)
     for key, bad in (('totalMinutes', 11), ('meanMinutes', 12), ('meanIntervalHours', 1.25),
                      ('sessions', True), ('sessions', -1), ('knownDurationSessions', 2)):
@@ -88,6 +88,25 @@ class SchemaTests(unittest.TestCase):
         partial = fixture()
         partial['recent'][0]['knownMinutes'] = None
         validate_public(partial)
+
+    def test_five_accepted_six_rejected(self):
+        value = fixture()
+        value['recent'] = []
+        for hour in range(10, 4, -1):
+            session = copy.deepcopy(fixture()['recent'][0])
+            for key in ('startedAt',):
+                session[key] = f'2026-01-02T{hour:02d}:00:00Z'
+            for part, minute in zip(session['segments'], (0, 15)):
+                part['at'] = f'2026-01-02T{hour:02d}:{minute:02d}:00Z'
+            value['recent'].append(session)
+        value['days'][0]['sessions'] = 6
+        with self.assertRaises(ValueError):
+            validate_public(value)
+        value['recent'].pop()
+        self.assertIs(validate_public(value), value)
+        value['dataAsOf'] = '2026-01-02T05:15:00Z'
+        with self.assertRaises(ValueError):
+            validate_public(value)
 
     def test_invalid_payloads(self):
         for index, payload in enumerate(invalid_payloads()):

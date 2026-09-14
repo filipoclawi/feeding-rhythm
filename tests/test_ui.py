@@ -98,6 +98,23 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
             result=page.evaluate("async()=>await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}})")
             assert not result['violations'],json.dumps(result['violations'],indent=2)
             print('PASS axe WCAG 2.1 A/AA populated desktop')
+        payload=fixture()
+        payload['recent'].extend([record(3,['left','right']),record(19,['left','right'])])
+        reload()
+        assert page.locator('.session').count()==5
+        assert page.locator('#recent-title').inner_text()=='Latest five'
+        starts=page.locator('.session h3').all_inner_texts()
+        assert starts==sorted(starts,reverse=True), starts
+        for width,height in [(320,568),(360,640),(390,664),(1440,1000)]:
+            page.set_viewport_size({'width':width,'height':height})
+            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            assert page.locator('.session,.segments li').evaluate_all('(els)=>els.every(e=>e.scrollWidth<=e.clientWidth+1)')
+            if args.axe:
+                page.add_script_tag(path=args.axe)
+                assert not page.evaluate("async()=> (await axe.run(document,{runOnly:{type:'tag',values:['wcag2a','wcag2aa','wcag21a','wcag21aa']}})).violations")
+        assert page.locator('svg[role=img]').count()==4
+        print('PASS five newest-first; six rejection below; mobile overflow and accessibility')
+        payload=fixture()
         payload['recent'][0]['order']=None
         reload();assert page.locator('#last-side').inner_text()=='Order unknown'
         assert 'list order is not a sequence' in page.locator('.session .segments').first.get_attribute('aria-label')
@@ -145,9 +162,9 @@ with tempfile.TemporaryDirectory(prefix='feeding-ui-test-') as temp:
         assert 'REJECT-ME' not in page.locator('body').inner_text()
         payload=fixture();payload['days'][0]['sessions']=-1
         reload();assert 'unavailable' in page.locator('#status').inner_text()
-        payload=fixture();payload['recent'].append(copy.deepcopy(payload['recent'][0]))
+        payload=fixture();payload['recent'] *= 2
         reload();assert 'unavailable' in page.locator('#status').inner_text()
-        print('PASS extra keys, negative counts, >3 recent records rejected')
+        print('PASS extra keys, negative counts, >5 recent records rejected')
         payload=fixture();payload['recent']=[];payload['days']=[];payload['dataAsOf']=None;payload['coverage']={'start':None,'end':None,'notes':[]}
         reload();assert 'No recorded side'==page.locator('#last-side').inner_text()
         assert page.locator('.chart-card').count()==4

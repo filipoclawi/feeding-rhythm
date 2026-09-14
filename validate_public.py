@@ -15,7 +15,7 @@ NOTES = frozenset({
     'Daily totals include known durations only; means exclude sessions with any unknown duration.',
     'Daily minutes are rounded to 5 minutes and start-to-start intervals to 0.5 hours; counts are exact.',
     'Daily counts and durations are assigned to the session start date in Europe/Zurich.',
-    'Only the three most recent sessions include detail; retrospective side order is unknown.',
+    'Only the five most recent sessions include detail; retrospective side order is unknown.',
 })
 ERROR = 'Invalid public export'
 
@@ -71,7 +71,7 @@ def _validate(payload):
     require(payload['timezone'] == 'Europe/Zurich')
     instant(payload['checkedAt'])
     array(payload['recent'])
-    require(len(payload['recent']) <= 3)
+    require(len(payload['recent']) <= 5)
     approved = set()
     starts = []
     for recent in payload['recent']:
@@ -124,7 +124,7 @@ def _validate(payload):
         if entry['sessions'] == 0:
             require(all(entry[key] is None for key in ('totalMinutes', 'meanMinutes', 'meanIntervalHours')))
     require(all((b-a).days == 1 for a, b in zip(dates, dates[1:])))
-    require(len(payload['recent']) == min(3, total_sessions))
+    require(len(payload['recent']) == min(5, total_sessions))
     coverage = payload['coverage']
     fields(coverage, 'start end notes')
     require(coverage['start'] == (dates[0].isoformat() if dates else None))
