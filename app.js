@@ -134,6 +134,13 @@
         if (Math.abs(view.scroll.scrollLeft-target)>.6) view.scroll.scrollLeft=target;
         view.expected=view.scroll.scrollLeft;
         view.width=view.scroll.clientWidth;
+        // Keep each visible calendar tick inside the scroll viewport at its edges.
+        const edge=view.scroll.getBoundingClientRect().left;
+        view.scroll.querySelectorAll('.chart-date').forEach(label=>{
+          const x=label.parentElement.getBoundingClientRect().left-edge;
+          label.style.visibility=x < -.5 || x >= view.width-.5 ? 'hidden' : 'visible';
+          label.style.transform=`translateX(${Math.min(0,view.scroll.getBoundingClientRect().width-x-label.getBoundingClientRect().width)}px)`;
+        });
         const start = Math.round(offset);
         view.range.textContent=`${date(calendar[start]+'T12:00:00Z')} – ${date(calendar[Math.min(count-1,start+WINDOW-1)]+'T12:00:00Z')}`;
         view.latest.disabled=followLatest;
@@ -149,7 +156,7 @@
         const max=scale ? scale.max : Math.max(1,...values.filter(v=>v!==null));
         const ticks=scale ? scale.ticks : [0,max*.5,max];
         const labels=ticks.map(value=>scale ? `${num(value)} ${unit}` : num(value));
-        const width=440,height=180,left=scale ? Math.max(76,...labels.map(label=>label.length*10+14)) : 38,right=12,top=15,bottom=38,plotW=width-left-right,plotH=height-top-bottom;
+        const width=440,height=200,left=scale ? Math.max(76,...labels.map(label=>label.length*10+14)) : 38,right=12,top=15,bottom=58,plotW=width-left-right,plotH=height-top-bottom;
         const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-labelledby':`chart-${key}-title chart-${key}-desc`});
         svg.append(svgNode('title',{id:`chart-${key}-title`},`${title} by day`),svgNode('desc',{id:`chart-${key}-desc`},`Daily aggregates in ${unit}. Vertical axis starts at zero. Missing values are marked with a dash. Exact values are in the daily numbers table below.`));
         ticks.forEach((value,i)=>{const y=top+plotH*(1-value/max);svg.append(svgNode('line',{x1:left,y1:y,x2:width-right,y2:y,stroke:'#d8ddd2','stroke-width':1}),svgNode('text',{x:left-7,y:y+4,'text-anchor':'end'},labels[i]));});
@@ -182,8 +189,10 @@
             button.setAttribute('aria-pressed','true');readout.textContent=button.getAttribute('aria-label');
           });
           slot.append(button);
-          // Every seventh calendar day: stable and legible even on a phone.
-          if(i%7===3)slot.append(element('span','chart-date',fmt(day+'T12:00:00Z',{day:'numeric',month:'short'})));
+          // Calendar weekdays, independent of the first date or missing records.
+          const calendarDate=new Date(day+'T12:00:00Z');
+          const weekday=({1:'mon',3:'wed',6:'sat'})[calendarDate.getUTCDay()];
+          if(weekday)slot.append(element('span','chart-date',`${weekday}\n${calendarDate.getUTCDate()}/${calendarDate.getUTCMonth()+1}`));
           track.append(slot);
         });
         scroll.append(track);frame.append(scroll);card.append(controls,frame,readout);
