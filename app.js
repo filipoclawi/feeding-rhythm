@@ -108,9 +108,37 @@
     const intervals = Math.max(3, Math.ceil(peak / step));
     return {step, max: intervals * step, ticks: Array.from({length: intervals + 1}, (_, i) => i * step)};
   }
+  const DAY = 86400000, WINDOW = 14;
+  let windowStart = null, followLatest = true, chartViews = [], resizeCharts = null;
   function charts(d) {
     const days=[...d.days].sort((a,b)=>a.date.localeCompare(b.date));
     $('coverage').textContent = d.coverage.start && d.coverage.end ? `${date(d.coverage.start+'T12:00:00Z')} – ${date(d.coverage.end+'T12:00:00Z')}` : 'Coverage not available';
+    resizeCharts?.disconnect();
+    chartViews = [];
+    const last = days.length ? Date.parse(days.at(-1).date) : 0;
+    const first = days.length ? Math.min(Date.parse(days[0].date), last-(WINDOW-1)*DAY) : 0;
+    const count = days.length ? Math.round((last-first)/DAY)+1 : 0;
+    const maxOffset = Math.max(0,count-WINDOW);
+    let offset = followLatest || windowStart === null ? maxOffset : Math.max(0,Math.min(maxOffset,(windowStart-first)/DAY));
+    windowStart = first+offset*DAY;
+    const byDate = new Map(days.map(d=>[d.date,d]));
+    const calendar = Array.from({length:count},(_,i)=>new Date(first+i*DAY).toISOString().slice(0,10));
+    function position(source) {
+      if (source) {
+        offset = Math.max(0,Math.min(maxOffset,source.scrollLeft/source.clientWidth*WINDOW));
+        followLatest = Math.abs(offset-maxOffset)<.05;
+        windowStart = first+offset*DAY;
+      }
+      for (const view of chartViews) {
+        const target = offset/WINDOW*view.scroll.clientWidth;
+        if (Math.abs(view.scroll.scrollLeft-target)>.6) view.scroll.scrollLeft=target;
+        view.expected=view.scroll.scrollLeft;
+        view.width=view.scroll.clientWidth;
+        const start = Math.round(offset);
+        view.range.textContent=`${date(calendar[start]+'T12:00:00Z')} – ${date(calendar[Math.min(count-1,start+WINDOW-1)]+'T12:00:00Z')}`;
+        view.latest.disabled=followLatest;
+      }
+    }
     $('charts').replaceChildren();
     for (const [key,title,description,unit,color] of metrics) {
       const card=element('article','chart-card'); card.append(element('h3','',title),element('p','',description));
@@ -125,17 +153,52 @@
         const svg=svgNode('svg',{viewBox:`0 0 ${width} ${height}`,role:'img','aria-labelledby':`chart-${key}-title chart-${key}-desc`});
         svg.append(svgNode('title',{id:`chart-${key}-title`},`${title} by day`),svgNode('desc',{id:`chart-${key}-desc`},`Daily aggregates in ${unit}. Vertical axis starts at zero. Missing values are marked with a dash. Exact values are in the daily numbers table below.`));
         ticks.forEach((value,i)=>{const y=top+plotH*(1-value/max);svg.append(svgNode('line',{x1:left,y1:y,x2:width-right,y2:y,stroke:'#d8ddd2','stroke-width':1}),svgNode('text',{x:left-7,y:y+4,'text-anchor':'end'},labels[i]));});
-        // Daily spacing preserves gaps in the calendar without inventing zeroes.
-        const first=Date.parse(days[0].date), lastDate=Date.parse(days.at(-1).date), span=Math.max(1,Math.round((lastDate-first)/86400000)+1), step=plotW/span;
-        const labelIndexes = new Set([0,Math.floor((days.length-1)/2),days.length-1]);
-        days.forEach((day,i)=>{const x=left+((Date.parse(day.date)-first)/86400000+.5)*step;const v=day[key];
-          if(v===null)svg.append(svgNode('text',{x,y:top+plotH-5,'text-anchor':'middle'},'—'));
-          else {const h=v/max*plotH;const bar=svgNode('rect',{x:x-Math.min(step*.62,26)/2,y:top+plotH-h,width:Math.min(step*.62,26),height:Math.max(h,1),rx:2,fill:color});bar.append(svgNode('title',{},`${day.date}: ${num(v)} ${unit}`));svg.append(bar);}
-          if(labelIndexes.has(i))svg.append(svgNode('text',{x:Math.max(left+15,Math.min(width-right-15,x)),y:height-13,'text-anchor':'middle'},fmt(day.date+'T12:00:00Z',{day:'numeric',month:'short'})));
-        }); card.append(svg);
+        card.dataset.metric=key;
+        const controls=element('div','chart-controls');
+        const range=element('span','chart-range');
+        const latest=element('button','chart-latest','Latest'); latest.type='button';
+        latest.addEventListener('click',()=>{followLatest=true;offset=maxOffset;windowStart=first+offset*DAY;position();});
+        controls.append(range,latest);
+        const frame=element('div','chart-frame'); frame.append(svg);
+        const scroll=element('div','chart-scroll');
+        scroll.tabIndex=0; scroll.setAttribute('role','region');scroll.setAttribute('aria-label',`${title}: scroll left for older dates`);
+        scroll.style.left=`${left/width*100}%`;scroll.style.right=`${right/width*100}%`;
+        const track=element('div','chart-track');track.style.width=`${count/WINDOW*100}%`;
+        const readout=element('p','chart-readout','Tap a bar for its date and value. Swipe or scroll left for history.');
+        readout.setAttribute('aria-live','polite');
+        calendar.forEach((day,i)=>{
+          const value=byDate.get(day)?.[key] ?? null;
+          const slot=element('div','date-slot');slot.style.width=`${100/count}%`;
+          const button=element('button','chart-bar');button.type='button';
+          button.dataset.date=day;button.dataset.missing=String(value===null);
+          button.setAttribute('aria-label',`${day}: ${value===null?'No recorded value':num(value)+' '+unit}`);
+          button.setAttribute('aria-pressed','false');
+          const fill=element('span','bar-fill',value===null?'—':'');
+          fill.style.height=value===null?'auto':`${Math.max(.8,value/max*100)}%`;
+          if(value!==null)fill.style.background=color;
+          button.append(fill);
+          button.addEventListener('click',()=>{
+            track.querySelectorAll('[aria-pressed="true"]').forEach(b=>b.setAttribute('aria-pressed','false'));
+            button.setAttribute('aria-pressed','true');readout.textContent=button.getAttribute('aria-label');
+          });
+          slot.append(button);
+          // Every seventh calendar day: stable and legible even on a phone.
+          if(i%7===3)slot.append(element('span','chart-date',fmt(day+'T12:00:00Z',{day:'numeric',month:'short'})));
+          track.append(slot);
+        });
+        scroll.append(track);frame.append(scroll);card.append(controls,frame,readout);
+        const view={scroll,range,latest,expected:0};chartViews.push(view);
+        for(const event of ['pointerdown','touchstart','wheel','keydown','focusin'])scroll.addEventListener(event,()=>{view.userScroll=true;},{passive:true});
+        scroll.addEventListener('scroll',event=>{
+          if(view.width!==scroll.clientWidth || (event.isTrusted && !view.userScroll))position();
+          else if(Math.abs(scroll.scrollLeft-view.expected)>.6)position(scroll);
+        });
       }
       $('charts').append(card);
     }
+    position();
+    resizeCharts = new ResizeObserver(()=>{chartViews.forEach(view=>view.userScroll=false);position();});
+    chartViews.forEach(view=>resizeCharts.observe(view.scroll));
     $('daily-table').replaceChildren();
     for(const day of days){const tr=element('tr');const th=element('th','',day.date);th.scope='row';tr.append(th);for(const key of ['sessions','knownDurationSessions','totalMinutes','meanMinutes','meanIntervalHours'])tr.append(element('td','',num(day[key])));$('daily-table').append(tr);}
     if(!days.length){const row=element('tr');const td=element('td','','No daily records available.');td.colSpan=6;row.append(td);$('daily-table').append(row);}
