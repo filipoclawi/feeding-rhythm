@@ -16,7 +16,7 @@
   const amount = v => v === null || (typeof v === 'number' && Number.isFinite(v) && v >= 0);
   const integer = v => Number.isInteger(v) && v >= 0;
   function validate(d) {
-    if (!keys(d,['version','checkedAt','dataAsOf','timezone','recent','days','coverage']) || d.version !== 1 || d.timezone !== TZ || !iso(d.checkedAt) || !(d.dataAsOf === null || iso(d.dataAsOf)) || !Array.isArray(d.recent) || d.recent.length > 5 || !Array.isArray(d.days)) throw Error('Invalid public data');
+    if (!keys(d,['version','checkedAt','dataAsOf','timezone','recent','days','coverage',...(d.version===2?['analysis']:[])]) || ![1,2].includes(d.version) || d.timezone !== TZ || !iso(d.checkedAt) || !(d.dataAsOf === null || iso(d.dataAsOf)) || !Array.isArray(d.recent) || d.recent.length > 5 || !Array.isArray(d.days)) throw Error('Invalid public data');
     for (const s of d.recent) {
       if (!keys(s,['startedAt','endedAt','leftMinutes','rightMinutes','knownMinutes','order','segments','grouped','uncertain']) || !iso(s.startedAt) || !(s.endedAt === null || (iso(s.endedAt) && Date.parse(s.endedAt) >= Date.parse(s.startedAt))) || !amount(s.leftMinutes) || !amount(s.rightMinutes) || !amount(s.knownMinutes) || typeof s.grouped !== 'boolean' || typeof s.uncertain !== 'boolean' || !(s.order === null || (Array.isArray(s.order) && s.order.length > 0 && s.order.every(v => ['left','right'].includes(v)))) || !Array.isArray(s.segments)) throw Error('Invalid session');
       for (const segment of s.segments) if (!keys(segment,['side','at','minutes']) || !['left','right','unknown'].includes(segment.side) || !(segment.at === null || iso(segment.at)) || !amount(segment.minutes)) throw Error('Invalid segment');
@@ -27,6 +27,12 @@
       dates.add(dday.date);
     }
     if (!keys(d.coverage,['start','end','notes']) || ![d.coverage.start,d.coverage.end].every(v => v === null || day(v)) || !Array.isArray(d.coverage.notes) || !d.coverage.notes.every(v => typeof v === 'string')) throw Error('Invalid coverage');
+    if(d.version===2){
+      const a=d.analysis;
+      if(!keys(a,['windowStart','windowEnd','gaps','sideDays'])||!day(a.windowStart)||!day(a.windowEnd)||!Array.isArray(a.gaps)||!Array.isArray(a.sideDays))throw Error('Invalid analysis');
+      for(const r of a.gaps)if(!keys(r,['startedAt','gapMinutes','status'])||!iso(r.startedAt)||!amount(r.gapMinutes)||!['known','unknown','overlap'].includes(r.status)||(r.gapMinutes===null)!==(r.status==='unknown')||(r.status==='overlap'&&r.gapMinutes!==0))throw Error('Invalid gap');
+      for(const r of a.sideDays)if(!keys(r,['date','leftMinutes','rightMinutes','complete'])||!day(r.date)||!amount(r.leftMinutes)||!amount(r.rightMinutes)||r.leftMinutes===null||r.rightMinutes===null||typeof r.complete!=='boolean')throw Error('Invalid side day');
+    }
     return d;
   }
   function freshness() {
@@ -213,9 +219,44 @@
     if(!days.length){const row=element('tr');const td=element('td','','No daily records available.');td.colSpan=6;row.append(td);$('daily-table').append(row);}
     // Free-text coverage notes intentionally never enter the DOM.
   }
+  function analysis(d) {
+    $('analysis').hidden = !d.analysis;
+    const root=$('analysis-charts'); root.replaceChildren();
+    if(!d.analysis)return;
+    const a=d.analysis;
+    const calendar=[];
+    if(d.days.length) for(let t=Date.parse(d.days[0].date);t<=Date.parse(d.days.at(-1).date);t+=DAY)calendar.push(new Date(t).toISOString().slice(0,10));
+    const sides=new Map(a.sideDays.map(r=>[r.date,r]));
+    const sets=[{title:'End-to-next-start gaps', kind:'gaps', rows:a.gaps, description:`${a.windowStart} – ${a.windowEnd} · Every grouped session, Zurich. Hours since the previous completed end.`, values:r=>[r.gapMinutes===null?null:r.gapMinutes/60], label:r=>`${stamp(r.startedAt)} · ${r.status==='unknown'?'Gap unknown (no complete previous end)':r.status==='overlap'?'Overlap · 0 h rest':num(r.gapMinutes/60)+' h gap ('+num(r.gapMinutes)+' min)'}`},
+      {title:'Recorded nursing time by side',kind:'sides',rows:calendar.map(date=>sides.get(date)||{date,leftMinutes:null,rightMinutes:null,complete:false}),description:'All recorded dates · 14-day viewport · Left (green), Right (rust). Known nursing time in hours, not milk intake.',values:r=>[r.leftMinutes===null?null:r.leftMinutes/60,r.rightMinutes===null?null:r.rightMinutes/60],label:r=>`${r.date} · Left ${num(r.leftMinutes===null?null:r.leftMinutes/60)} h · Right ${num(r.rightMinutes===null?null:r.rightMinutes/60)} h${r.complete?'':' · Known subtotal only; incomplete or unrecorded'}`}];
+    for(const spec of sets){
+      const card=element('article','chart-card analysis-card');card.dataset.analysis=spec.kind;
+      card.append(element('h3','',spec.title),element('p','',spec.description));
+      const scale=niceAxis(spec.rows.map(r=>spec.values(r).reduce((s,v)=>s+(v||0),0)),'h');
+      const frame=element('div','analysis-frame'),axis=element('div','analysis-axis');
+      scale.ticks.forEach(v=>{const tick=element('span','',`${num(v)} h`);tick.style.bottom=`${v/scale.max*100}%`;axis.append(tick);});
+      const scroll=element('div',`analysis-scroll ${spec.kind}`);scroll.tabIndex=0;scroll.setAttribute('role','region');scroll.setAttribute('aria-label',`${spec.title}: scroll for history; tab to inspect bars`);
+      const track=element('div','analysis-track');track.style.width=spec.kind==='gaps'?`${Math.max(1,spec.rows.length)*66}px`:`${Math.max(1,spec.rows.length/14)*100}%`;
+      const readout=element('p','chart-readout','Tap or keyboard-select a bar for its date and values.');readout.setAttribute('aria-live','polite');
+      spec.rows.forEach((r,i)=>{const slot=element('div','analysis-slot');slot.style.width=`${100/spec.rows.length}%`;
+        const button=element('button','analysis-bar');button.type='button';button.setAttribute('aria-label',spec.label(r));button.setAttribute('aria-pressed','false');
+        const values=spec.values(r);
+        if(values.every(v=>v===null))button.append(element('span','analysis-missing','—'));
+        else values.forEach((v,j)=>{const fill=element('span',`analysis-fill ${j?'right':'left'}`);fill.style.height=`${Math.max(v===0?.6:0,(v||0)/scale.max*100)}%`;button.append(fill);});
+        button.addEventListener('click',()=>{track.querySelectorAll('[aria-pressed=true]').forEach(b=>b.setAttribute('aria-pressed','false'));button.setAttribute('aria-pressed','true');readout.textContent=spec.label(r);});
+        slot.append(button);
+        const dt=spec.kind==='gaps'?new Date(r.startedAt):new Date(r.date+'T12:00:00Z');
+        if(spec.kind==='gaps'||[1,3,6].includes(dt.getUTCDay()))slot.append(element('span','analysis-date',spec.kind==='gaps'?`${fmt(r.startedAt,{day:'numeric',month:'numeric'})}\n${time(r.startedAt)}`:fmt(dt,{weekday:'short',day:'numeric',month:'numeric'})));
+        track.append(slot);
+      });
+      scroll.append(track);frame.append(axis,scroll);
+      const latest=element('button','chart-latest','Latest');latest.type='button';latest.addEventListener('click',()=>scroll.scrollLeft=scroll.scrollWidth);
+      card.append(latest,frame,readout);root.append(card);requestAnimationFrame(()=>scroll.scrollLeft=scroll.scrollWidth);
+    }
+  }
   async function refresh(){
     if(busy)return;busy=true;$('refresh').disabled=true;
-    try {const response=await fetch('data.json',{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Unavailable');const next=validate(await response.json());current=next;failed=false;recentSessions(next);charts(next);}
+    try {const response=await fetch('data.json',{cache:'no-store',credentials:'omit',signal:AbortSignal.timeout(15000)});if(!response.ok)throw Error('Unavailable');const next=validate(await response.json());current=next;failed=false;recentSessions(next);charts(next);analysis(next);}
     catch {failed=true;if(!current){$('recent').replaceChildren(element('p','empty','No records could be loaded. The dashboard will try again automatically.'));$('last-side').textContent='Not available';$('side-context').textContent='No side can be determined without a valid published record.';charts({days:[],coverage:{start:null,end:null}});}}
     finally{busy=false;$('refresh').disabled=false;freshness();}
   }

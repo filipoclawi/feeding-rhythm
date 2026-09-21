@@ -66,8 +66,36 @@ def day(value):
 
 
 def _validate(payload):
-    fields(payload, 'version checkedAt dataAsOf timezone recent days coverage')
-    require(type(payload['version']) is int and payload['version'] == 1)
+    fields(payload, 'version checkedAt dataAsOf timezone recent days coverage' + (' analysis' if payload.get('version') == 2 else ''))
+    require(type(payload['version']) is int and payload['version'] in (1, 2))
+    if payload['version'] == 2:
+        from zoneinfo import ZoneInfo
+        from datetime import timedelta
+        a = payload['analysis']
+        fields(a, 'windowStart windowEnd gaps sideDays')
+        end = instant(payload['checkedAt']).astimezone(ZoneInfo('Europe/Zurich')).date()
+        require(day(a['windowEnd']) == end and day(a['windowStart']) == end-timedelta(days=13))
+        array(a['gaps']); array(a['sideDays'])
+        starts = []
+        for gap in a['gaps']:
+            fields(gap, 'startedAt gapMinutes status')
+            start = instant(gap['startedAt'])
+            require(day(a['windowStart']) <= start.astimezone(ZoneInfo('Europe/Zurich')).date() <= end)
+            starts.append(start)
+            require(gap['status'] in ('known','unknown','overlap'))
+            number(gap['gapMinutes'])
+            require((gap['gapMinutes'] is None) == (gap['status'] == 'unknown'))
+            if gap['status'] == 'overlap': require(gap['gapMinutes'] == 0)
+        require(starts == sorted(set(starts)))
+        side_dates = []
+        for row in a['sideDays']:
+            fields(row, 'date leftMinutes rightMinutes complete')
+            side_dates.append(day(row['date']))
+            for key in ('leftMinutes','rightMinutes'):
+                number(row[key]); require(row[key] is not None)
+            require(type(row['complete']) is bool)
+        require(side_dates == sorted(set(side_dates)))
+        require([r['date'] for r in a['sideDays']] == [r['date'] for r in payload['days'] if r['sessions']])
     require(payload['timezone'] == 'Europe/Zurich')
     instant(payload['checkedAt'])
     array(payload['recent'])
